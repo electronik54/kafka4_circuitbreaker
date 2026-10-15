@@ -45,7 +45,3 @@ kafka-data/
 
 # AI agent config
 .clinerules
-
-#temp
-consumer/
-producer/
