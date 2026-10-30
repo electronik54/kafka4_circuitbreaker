@@ -1,4 +1,4 @@
-# Apache Kafka Learning Session — Resume Guide
+# Apache Kafka vKafka 4.2.2 Learning Session — Resume Guide
 
 ## Purpose of this file
 
@@ -132,6 +132,12 @@ This learner learns best with the following approach. Follow it every session.
 
 10. **Production-first, always** — real patterns, real failure modes, real
     defaults; say explicitly when a shortcut is not production-safe.
+
+11. **Always say WHICH PROJECT and WHICH FILE.** Before showing any code, state
+    the project (`producer` or `consumer`) and the exact file path — e.g.
+    "In `consumer/src/main/java/com/electronik54/consumer/listener/MessageListener.java`".
+    Never leave the learner guessing where a snippet belongs, and when
+    verifying, confirm each file is in the right module/package.
 
 ---
 
@@ -378,7 +384,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner can explain what happens to the first message
       after a restart, and why `group.id` must be unique per consumer role.
 
-- [ ] **Step 6 — JSON payloads, headers, and the mistakes to avoid**
+- [x] **Step 6 — JSON payloads, headers, and the mistakes to avoid**
       Goal: replace raw strings with a typed DTO.
       Teach: `JsonSerializer` / `JsonDeserializer`; the `trusted.packages`
       setting and why `*` is risky; why deserialization failures must be
@@ -386,7 +392,7 @@ The agent must only move to the next step after the verification loop passes.
       DTO and the partition key consistent.
       Exit criteria: the consumer logs a deserialized DTO and reads a header.
 
-- [ ] **Step 7 — End-to-end verification + reading offsets**
+- [x] **Step 7 — End-to-end verification + reading offsets**
       Goal: prove the flow and learn to *see* it.
       Teach: `kafka-consumer-groups.sh --describe`, and how to read
       `CURRENT-OFFSET` vs `LOG-END-OFFSET` and `LAG`; what lag means while a
@@ -396,7 +402,7 @@ The agent must only move to the next step after the verification loop passes.
 
 ## Phase C — Ordering, partitioning and scaling
 
-- [ ] **Step 8 — Keys and partitioning (the ordering contract)**
+- [x] **Step 8 — Keys and partitioning (the ordering contract)**
       Goal: understand that **the key is the ordering unit**.
       Teach: order is guaranteed **only within a partition**; a key always maps
       to the same partition (so all events for one entity stay ordered); `null`
@@ -408,7 +414,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner can choose a key for a real entity, state the
       ordering guarantee it gives, and predict the partition for a sample key.
 
-- [ ] **Step 9 — Consumer groups and rebalancing**
+- [x] **Step 9 — Consumer groups and rebalancing** *(verified: 3 consumers → 1 partition each; rebalance observed when one stopped)*
       Goal: understand group scaling and why rebalances hurt.
       Teach: partitions in a group are split across consumers, so **max useful
       consumers = partition count** (extra consumers sit idle); eager
@@ -423,7 +429,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner can explain why a 10-second processing pause is
       safer than a 6-minute one, and how to add consumers without a storm.
 
-- [ ] **Step 10 — Throughput and latency tuning**
+- [x] **Step 10 — Throughput and latency tuning** *(concept covered: `concurrency` ≤ partitions; the producer/consumer knobs; demo skipped)*
       Goal: make throughput a deliberate choice, not an accident.
       Teach: `concurrency` on the listener container (keep it at or below the
       partition count); `max.poll.records` and its direct effect on
@@ -439,7 +445,7 @@ The agent must only move to the next step after the verification loop passes.
 
 ## Phase D — Reliability: the production core
 
-- [ ] **Step 11 — Delivery semantics: at-least-once, at-most-once, exactly-once**
+- [x] **Step 11 — Delivery semantics: at-least-once, at-most-once, exactly-once** *(learner confirmed our consumer is at-least-once)*
       Goal: know which guarantee the code actually has.
       Teach: producer durability (`acks=all` + `min.insync.replicas=2` +
       `unclean.leader.election.enable=false`) and why `acks=1` is data loss
@@ -451,7 +457,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner can state, for their consumer, exactly which
       guarantee holds and why duplicates are still possible.
 
-- [ ] **Step 12 — Offset management done right**
+- [x] **Step 12 — Offset management done right** *(observed: a failure without a DLT is retried then skipped by the default error handler = silent loss)*
       Goal: never lose progress or silently reorder it.
       Teach: Spring Kafka `AckMode` values and the container's default batching
       behaviour; when batch commits are acceptable and when they are not;
@@ -462,7 +468,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner deliberately crashes between processing and
       commit, observes the duplicate on restart, and explains why it happened.
 
-- [ ] **Step 13 — Error handling: blocking vs non-blocking retries**
+- [x] **Step 13 — Error handling: blocking vs non-blocking retries** *(verified: `@RetryableTopic` → poison record travelled main → retry → DLT)*
       Goal: retry without stalling the partition.
       Teach: `DefaultErrorHandler` + `ExponentialBackOffWithMaxRetries` and its
       blocking nature (the container sleeps in-thread, so the partition stalls
@@ -789,17 +795,17 @@ The agent must only move to the next step after the verification loop passes.
 
 | Field | Value |
 |---|---|
-| Status | **Step 6a in progress** — Steps 0–5 done (producer → broker → consumer verified, LAG 0); Step 6a (producer sends a JSON DTO) code given but not yet applied; 3 small consumer fixes pending |
-| Current step | Step 6a — producer sends a typed DTO as JSON (`JsonSerializer`); then 6b — consumer `JsonDeserializer` + trusted packages |
-| Last verified step | Step 5 (complete) — consumer read all 4 records; `kafka-consumer-groups --describe --group learning-consumer` shows LAG 0 on partitions 0 and 1 |
+| Status | **Step 13 complete; Step 14 in progress (paused)** — `@RetryableTopic` verified (poison record parked in the DLT). Step 14 config given; the malformed-record demo not yet run |
+| Current step | Step 14 — deserialization safety (`ErrorHandlingDeserializer` → DLT); paused before the malformed-record demo |
+| Last verified step | Step 13 (complete) — poison record parked in `local.learning.smoke.v1-dlt` after non-blocking retries; retry topic held the copies |
 | Project location | `F:\code\KodeGravity\CODE\Kafka\kafka_rev1` — sibling `producer` and `consumer` Maven projects |
 | Broker | local Docker, KRaft **combined-mode single node**, image `apache/kafka:4.2.2` (= Apache Kafka 4.2.x), host port 9092 — **UP and verified** (Kafka 4.2.2 started, `isFenced: false`, API versions OK) |
 | Toolchain | build with JDK 21 (`C:\Program Files\Java\jdk-21.0.10`) via `JAVA_HOME`; the PATH default is JDK 17 |
 | Stack (resolved) | Spring Boot **4.1.1**, spring-kafka **4.1.1**, kafka-clients **4.2.1**, Java 21; deps: `spring-boot-starter-web`, `spring-boot-starter-aspectj`, `spring-boot-starter-kafka` |
 | Topics | `local.learning.smoke.v1` — 3 partitions, RF 1 (created in Step 0; now also declared in code via `KafkaTopicConfig.smokeTopic()`) |
-| Consumer groups | `learning-consumer` (consumer app) — 4 records read; LAG 0 on partitions 0 and 1 |
+| Consumer groups | `learning-consumer` — main topic (3 partitions) + `-retry` + `-dlt` topics; LAG 0 |
 | Open questions | 1 broker now → 3 brokers before the reliability phase; AWS home (MSK provisioned vs Serverless vs self-managed) chosen in Step 29; Spring profiles dev/prod introduced in Step 28. Java 17-vs-21 is resolved: use 21. |
-| Resume here (next session) | 1) apply the 3 consumer fixes: Lombok `<scope>annotationProcessor</scope>` → `<optional>true</optional>`, rename package `listner` → `listener`, log text `partation` → `partition`; 2) apply the Step 6a producer JSON changes (`OrderEvent` DTO, `JsonSerializer`, publisher uses `KafkaTemplate<String,Object>`, controller `POST /api/orders`); 3) test the POST; 4) then Step 6b (consumer `JsonDeserializer` + `spring.json.trusted.packages`) |
+| Resume here (next session) | Continue **Step 14**: in the consumer's `application.yaml` set `value-deserializer` to `ErrorHandlingDeserializer` and add `spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer`; restart; send a **malformed** record via the console producer; confirm the consumer keeps running and the bad record lands in `local.learning.smoke.v1-dlt`. Then inspect DLT headers + design replay. After that: Step 15 (CircuitBreaker). |
 
 ## Architecture built so far (class / method names for reference)
 
@@ -808,17 +814,18 @@ The agent must only move to the next step after the verification loop passes.
 | Class | Package | Role | Key methods / fields |
 |---|---|---|---|
 | `ProducerApplication` | `com.electronik54.producer` | Spring Boot entry point | `main` |
-| `MessageController` | `...producer.controller` | REST API | `POST /api/messages` → `publish(PublishRequest)` → `ResponseEntity<PublishResponse>` |
-| `MessagePublisher` | `...producer.service` | `KafkaTemplate` wrapper | `publish(topic, key, value)` → `PublishResponse`; throws `PublishException` |
-| `PublishRequest` / `PublishResponse` | `...producer.dto` | API wire shapes | `key`,`value` / `topic`,`partition`,`offset` |
+| `MessageController` | `...producer.controller` | REST API | `POST /api/messages/publish` → `publish(OrderEvent)` → `ResponseEntity<PublishResponse>` |
+| `MessagePublisher` | `...producer.service` | `KafkaTemplate<String, OrderEvent>` wrapper | `publish(topic, key, OrderEvent)` → `PublishResponse`; throws `PublishException` |
+| `OrderEvent` / `PublishResponse` | `...producer.dto` | wire shapes | `orderId`,`customerId`,`amount` / `topic`,`partition`,`offset` |
 | `ErrorResponse` | `...producer.dto` | error body shape | `timestamp`,`status`,`error`,`message`,`path` |
 | `GlobalExceptionHandler` | `...producer.exception` | `@RestControllerAdvice` | `PublishException`→503, validation→400, `Exception`→500 |
 | `PublishException` | `...producer.exception` | custom runtime exception | — |
 | `KafkaTopicConfig` | `...producer.config` | topic provisioning by code | `smokeTopic()` → `NewTopic` (3 partitions, RF 1) |
 | `LoggingAspect` | `...producer.aspect` | AOP SLF4J logging | `@Around` on `controller` + `service` packages |
 | `ConsumerApplication` | `com.electronik54.consumer` | Spring Boot entry point | `main` |
-| `MessageListener` | `...consumer.listener` | `@KafkaListener` (receives records) | `onMessage(ConsumerRecord)` |
-| `MessageService` | `...consumer.service` | business logic (the work) | `process(payload)` |
+| `MessageListener` | `...consumer.listener` | `@KafkaListener` (receives records) | `onMessage(ConsumerRecord<String, OrderEvent>)` |
+| `MessageService` | `...consumer.service` | business logic (the work) | `process(OrderEvent)` |
+| `OrderEvent` | `...consumer.dto` | consumed wire shape (mirrors producer DTO) | `orderId`, `customerId`, `amount` |
 
 Planned shape (adjust to the learner's decisions):
 
@@ -984,6 +991,21 @@ them when the learner observes them for real.
     makes Maven warn that the POM is malformed and threatens build stability.
     *(Observed live: the consumer pom used the Gradle scope; Maven warned but
     still built.)*
+29. **Spring Kafka's `JsonSerializer` needs Jackson 2, but Spring Boot 4 ships
+    Jackson 3.** spring-kafka declares `com.fasterxml.jackson` (Jackson 2) as
+    **optional**, so it is not pulled in; `spring-boot-starter-jackson` brings
+    `tools.jackson` (Jackson 3). Symptom: `NoClassDefFoundError:
+    com/fasterxml/jackson/databind/JavaType` when the producer is first used.
+    Fix: add `com.fasterxml.jackson.core:jackson-databind` (Jackson 2).
+    *(Observed live in Step 6a.)*
+30. **The DLT/retry publisher uses the consumer app's `producer` config — set it
+    too.** A consumer with `@RetryableTopic` publishes failed records to the
+    retry topic/DLT via a `KafkaTemplate`; if the app has no
+    `spring.kafka.producer.value-serializer`, it defaults to `StringSerializer`
+    and fails on a typed value with `SerializationException` → an infinite retry
+    loop. *(Observed live in Step 13: the poison record could not be parked
+    until `producer.value-serializer: JsonSerializer` was added to the
+    consumer's `application.yaml`.)*
 
 ---
 
