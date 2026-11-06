@@ -1,4 +1,7 @@
 package com.electronik54.consumer.dto;
 
-public record OrderEvent(String orderId, String customerId, int amount) {
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+public record OrderEvent(String orderId, String customerId, int amount, LocalDateTime orderDate) {
 }

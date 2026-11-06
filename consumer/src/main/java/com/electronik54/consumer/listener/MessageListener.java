@@ -22,10 +22,15 @@ public class MessageListener implements ConsumerSeekAware {
         this.messageService = messageService;
     }
 
-    @RetryableTopic(attempts = "3") // IMPORTANT: it dynamically generates multiple underlying listener containers (one for your main topic, one for each retry stage, and one for the DLT). So each instance will now run 3 listeners by default
-    @KafkaListener(topics = "local.learning.smoke.v1")
+    /*
+    IMP-NOTES:
+    numPartitions defaults to 1, so Spring creates -retry and -dlt with ONE partition even when the main topic has 3. A failed record is republished to the SAME partition number, so a mismatch breaks the retry. Always pin it: numPartitions = "3".
+    @RetryableTopic dynamically generates multiple underlying listener containers (one for your main topic, one for each retry stage, and one for the DLT). So each instance will now run 3 listeners by default
+    */
+    @RetryableTopic(attempts = "3", numPartitions = "3")
+    @KafkaListener(id = "orders-listener", groupId = "learning-consumer", topics = "local.learning.smoke.v1")
     public void onMessage(ConsumerRecord<String, OrderEvent> record) {
-        log.info("Received topic={} partition={} offset={} key={} value={} \n"
+        log.info("\nReceived topic={} partition={} offset={} key={} value={} \n"
                 , record.topic()
                 , record.partition()
                 , record.offset()

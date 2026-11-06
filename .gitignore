@@ -45,3 +45,4 @@ kafka-data/
 
 # AI agent config
 .clinerules
+.cline

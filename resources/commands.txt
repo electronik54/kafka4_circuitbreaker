@@ -1,20 +1,23 @@
 :: consumer 1
 set "JAVA_HOME=C:\Program Files\Java\jdk-21.0.10"
 cd /d F:\code\KodeGravity\CODE\Kafka\kafka_rev1\consumer
-mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-1 --server.port=0"
+mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-CONx1 --server.port=8026"
 
 :: consumer 2
 set "JAVA_HOME=C:\Program Files\Java\jdk-21.0.10"
 cd /d F:\code\KodeGravity\CODE\Kafka\kafka_rev1\consumer
-mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-2 --server.port=0"
+mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-CONx2 --server.port=0"
 
 :: consumer 3
 set "JAVA_HOME=C:\Program Files\Java\jdk-21.0.10"
 cd /d F:\code\KodeGravity\CODE\Kafka\kafka_rev1\consumer
-mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-3 --server.port=0"
+mvn -DskipTests spring-boot:run "-Dspring-boot.run.arguments=--spring.application.name=consumer-CONx3 --server.port=0"
 
 :: docker-Kafka partition list
 docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group learning-consumer
 
 :: docker-kafka all listners
 docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group learning-consumer --members --verbose
+
+:: read DLT
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic local.learning.smoke.v1-dlt --from-beginning --timeout-ms 10000 --formatter-property print.headers=true --formatter-property print.partition=true --formatter-property print.key=true

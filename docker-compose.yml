@@ -4,16 +4,59 @@ services:
     container_name: kafka
     ports:
       - "9092:9092"
+      - "9094:9094"
+    volumes:
+      - ./kafka_server_jaas.conf:/etc/kafka/secrets/kafka_server_jaas.conf:ro
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # IMP-NOTES: Two listeners = two "doors" into the same broker. PLAINTEXT (:9092) is for
+      # apps on my machine (advertised as localhost). INTERNAL (:19092) is for other containers
+      # (advertised as kafka). Kafka always replies with the ADVERTISED address, so a container
+      # UI must use INTERNAL - on PLAINTEXT it would be told "localhost:9092" and call itself.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:19092,SASL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:19092,SASL://localhost:9094
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT,SASL:SASL_PLAINTEXT
+      # IMP-NOTES: with more than one listener Kafka must be told which one brokers use to talk
+      # to each other. Single node = nothing to talk to, but it must still be set explicitly.
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # IMP-NOTES: SASL_PLAINTEXT = authenticated but NOT encrypted (TLS/SASL_SSL comes later).
+      # SCRAM stores salted hashes in the cluster. We ADD this door (9094) and keep PLAINTEXT
+      # (9092) open so we can create users over the open door, switch apps to 9094, then close 9092.
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+      KAFKA_OPTS: -Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf
+
+
+
+      # IMP-NOTES: auto-created topics get this partition count. So a topic the BROKER creates (instead of Spring) silently ends up with a different shape than the app expects.
       KAFKA_NUM_PARTITIONS: 3
+      # IMP-NOTES: StandardAuthorizer = KRaft authorizer. allow.everyone=false => DENY by default.
+      # super.users bypass ACLs; ANONYMOUS = plaintext 9092 door, kept super as the admin door until we close 9092.
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_SUPER_USERS: "User:ANONYMOUS"
+
+
+
+  # TEMPORARY debug UI - read/browse only, no data lives here. Delete this whole service
+  # (and the INTERNAL listener above) when it is no longer needed.
+  kafbat-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    container_name: kafbat-ui
+    ports:
+      - "8090:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      # IMP-NOTES: must be the INTERNAL listener (kafka:19092), not localhost:9092 - the UI is a
+      # container, so "localhost" would mean the UI itself. See the listener note above.
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      # IMP-NOTES: lets me add/change clusters in the UI at runtime without restarting it.
+      DYNAMIC_CONFIG_ENABLED: 'true'

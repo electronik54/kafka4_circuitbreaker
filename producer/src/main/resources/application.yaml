@@ -1,12 +1,21 @@
 server:
-  port: 8020
+  port: 8021
 spring:
+  profiles:
+    active: local
+  output:
+    ansi:
+      enabled: always #for colored logs in terminal
   application:
     name: producer
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9094
+    properties:
+      security.protocol: SASL_PLAINTEXT
+      sasl.mechanism: SCRAM-SHA-256
+      sasl.jaas.config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${APP_SASL_USERNAME}" password="${APP_SASL_PASSWORD}";' #the username and password is for the app to authenticate itself to access kafka
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
-        spring.json.add.type.headers: false # this property removes the class name for the data we are sending. In our example we are transmitting
+        spring.json.add.type.headers: false

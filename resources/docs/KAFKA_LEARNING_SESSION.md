@@ -480,7 +480,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner demonstrates a record that fails twice, is retried
       without blocking, and lands in the DLT with headers showing the cause.
 
-- [ ] **Step 14 — Poison messages and deserialization safety**
+- [x] **Step 14 — Poison messages and deserialization safety** *(verified: malformed record parked in the DLT and the consumer kept running; DLT headers decoded with the new `tools/dlt-inspector`; replay DESIGNED, to be built at Step 23)*
       Goal: one bad record must never halt a partition.
       Teach: `ErrorHandlingDeserializer` wrapping the delegate and surfacing
       `DeserializationException` to the error handler; why a deserialization
@@ -492,9 +492,22 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner publishes a deliberately malformed record, the
       consumer keeps running, and the bad record is parked in the DLT.
 
-- [ ] **Step 15 — Consumer-side resilience (CircuitBreaker + backpressure)**
+- [x] **Step 15 — Consumer-side resilience (CircuitBreaker + backpressure)**
       Goal: connect the Resilience4j breaker from Step 3 to the consumer loop,
-      safely.
+      safely. CircuitBreaker config and `DownstreamBreakerGuard` pause/resume
+      code present in consumer project. **Drill NOT yet run** — all `POST /api/downstream/setStatus`
+      return 500 because the `GlobalExceptionHandler` maps every exception to 500,
+      preventing the breaker from ever opening. Fix required: either (a) modify
+      `DownstreamAdminController.setPartnerService()` to catch
+      `DownstreamUnavailableException` and return 200 OK with `partnerStatus` flag,
+      or (b) narrow `handleGeneric(Exception)` in `GlobalExceptionHandler` to return
+      appropriate status codes instead of always 500. Once fixed, the drill expects:
+      - 5 failing orders → breaker OPEN → `Breaker OPEN -> PAUSED 3 container(s)` 
+        (main + retry + DLT containers, per guard's `orders-listener` prefix);
+      - `kafka-consumer-groups.sh --describe` shows generation/members unchanged,
+        lag climbs (paused = not polling), no duplicates;
+      - `{"down":false}` → `OPEN→HALF_OPEN→CLOSED` within ~10s waitDurationInOpenState,
+        `RESUMED 3 container(s)`, lag drains to 0.
       Teach: a rejected or delayed record blocks **its partition**, so a
       CircuitBreaker must be paired with pause/resume
       (`MessageListenerContainer.pause()` / `resume()` via
@@ -514,7 +527,7 @@ The agent must only move to the next step after the verification loop passes.
 
 ## Phase E — Production hardening
 
-- [ ] **Step 16 — Observability: lag is the metric that matters**
+- [x] **Step 16 — Observability: lag is the metric that matters**
       Goal: know at a glance whether the service is healthy.
       Teach: **consumer lag** (per partition) as the #1 signal, and why a
       constantly-rising lag is the first symptom of almost every incident;
@@ -527,7 +540,7 @@ The agent must only move to the next step after the verification loop passes.
       Exit criteria: learner can produce a lag graph, and explain which alert
       they would page on and why.
 
-- [ ] **Step 17 — Security: TLS, SASL/SCRAM, ACLs, credential hygiene**
+- [x] **Step 17 — Security: TLS, SASL/SCRAM, ACLs, credential hygiene**
       Goal: a cluster that is not wide open.
       Teach: `security.protocol=SASL_SSL`; SASL mechanisms (PLAIN vs SCRAM) and
       why SCRAM is preferred; TLS truststore/keystore properties and common
@@ -795,9 +808,9 @@ The agent must only move to the next step after the verification loop passes.
 
 | Field | Value |
 |---|---|
-| Status | **Step 13 complete; Step 14 in progress (paused)** — `@RetryableTopic` verified (poison record parked in the DLT). Step 14 config given; the malformed-record demo not yet run |
-| Current step | Step 14 — deserialization safety (`ErrorHandlingDeserializer` → DLT); paused before the malformed-record demo |
-| Last verified step | Step 13 (complete) — poison record parked in `local.learning.smoke.v1-dlt` after non-blocking retries; retry topic held the copies |
+| Status | **Step 17 complete** — Security. SASL_PLAINTEXT (SCRAM) listener on :9094 (mounted JAAS file + `KAFKA_OPTS`); authorizer on (`StandardAuthorizer`, `allow.everyone.if.no.acl.found=false`, `super.users=User:ANONYMOUS`); least-privilege ACLs for `User:producer`/`User:consumer`; apps authenticate + are authorized, messages flowing. Secrets in gitignored `application-local.yaml`; committed yaml has `${APP_SASL_USERNAME}`/`${APP_SASL_PASSWORD}` placeholders + `local` profile. Deferred: close the plaintext :9092 door (needs a persistent volume). |
+| Current step | Step 18 — Schema management and evolution (Schema Registry + Avro/Protobuf + compatibility mode); Step 17 verified and closed |
+| Last verified step | Step 17 (complete) — SASL/SCRAM auth on :9094 works for producer+consumer; authorizer enabled and ACLs allow produce/consume (messages received). Denial test skipped; plaintext :9092 still open (deferred). Credential hygiene: secrets only in gitignored `application-local.yaml`. |
 | Project location | `F:\code\KodeGravity\CODE\Kafka\kafka_rev1` — sibling `producer` and `consumer` Maven projects |
 | Broker | local Docker, KRaft **combined-mode single node**, image `apache/kafka:4.2.2` (= Apache Kafka 4.2.x), host port 9092 — **UP and verified** (Kafka 4.2.2 started, `isFenced: false`, API versions OK) |
 | Toolchain | build with JDK 21 (`C:\Program Files\Java\jdk-21.0.10`) via `JAVA_HOME`; the PATH default is JDK 17 |
@@ -805,7 +818,7 @@ The agent must only move to the next step after the verification loop passes.
 | Topics | `local.learning.smoke.v1` — 3 partitions, RF 1 (created in Step 0; now also declared in code via `KafkaTopicConfig.smokeTopic()`) |
 | Consumer groups | `learning-consumer` — main topic (3 partitions) + `-retry` + `-dlt` topics; LAG 0 |
 | Open questions | 1 broker now → 3 brokers before the reliability phase; AWS home (MSK provisioned vs Serverless vs self-managed) chosen in Step 29; Spring profiles dev/prod introduced in Step 28. Java 17-vs-21 is resolved: use 21. |
-| Resume here (next session) | Continue **Step 14**: in the consumer's `application.yaml` set `value-deserializer` to `ErrorHandlingDeserializer` and add `spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer`; restart; send a **malformed** record via the console producer; confirm the consumer keeps running and the bad record lands in `local.learning.smoke.v1-dlt`. Then inspect DLT headers + design replay. After that: Step 15 (CircuitBreaker). |
+| Resume here (next session) | Step 18 — Schema management/evolution. Step 17 complete (SASL auth + ACLs + credential hygiene). Set JAVA_HOME to JDK 21 before CLI Maven. Broker: apache/kafka:4.2.2 KRaft, PLAINTEXT :9092 + SASL :9094 (SCRAM, JAAS via `KAFKA_OPTS`), authorizer on, `super.users=User:ANONYMOUS`. Creds `producer`/`consumer` in gitignored `application-local.yaml` (`local` profile). DEFERRED: close :9092 (needs persistent volume). Lab tooling: `kafbat-ui` (http://localhost:8090). |
 
 ## Architecture built so far (class / method names for reference)
 
@@ -813,7 +826,12 @@ The agent must only move to the next step after the verification loop passes.
 
 | Class | Package | Role | Key methods / fields |
 |---|---|---|---|
-| `ProducerApplication` | `com.electronik54.producer` | Spring Boot entry point | `main` |
+| `DownstreamBreakerGuard` | `com.electronik54.consumer.resilience` | Pauses/resumes `KafkaListenerEndpointRegistry` on CircuitBreaker state transitions (OPEN→pause, CLOSED/HALF_OPEN→resume); manages `AtomicBoolean paused` flag; `reconcile()` scheduled task checks breaker state every 5s; on state transition event, calls `apply(state)` which pauses or resumes all listener containers whose `listenerId` starts with `orders-listener` prefix (covers main topic + `-retry` + `-dlt` containers) |
+| `BreakerEventsConfig` | `com.electronik54.consumer.config` | Logs CircuitBreaker state transitions (`CLOSED→OPEN`, `OPEN→HALF_OPEN`, etc.) by registering an `onStateTransition` listener on the `downstream` breaker; aids debugging and alerting on unexpected state changes |
+| `DownstreamAdminController` | `com.electronik54.consumer.controller` | REST controller (`api/downstream`) with `GET /status` returning `breakerState`, `containersPaused`, `containerIds`, `bufferedCalls`, `failedCalls`, `notPermittedCalls`, `failureRatePercent`; and `POST /setStatus` to switch partner service `down/up` for drilling CircuitBreaker behavior |
+| `PartnerNotifier` | `com.electronik54.consumer.downstream` | Simulated downstream dependency; `notifyPartner(OrderEvent)` throws `DownstreamUnavailableException` when `AtomicBoolean down` is `true`; `partnerStatus()` / `partnerStatus(boolean)` for admin control; integrates with CircuitBreaker via `executeRunnable()` — breaker wraps ONLY this call, not the poison-check or offset-commit |
+| `DownstreamUnavailableException` | `com.electronik54.consumer.downstream` | Custom `RuntimeException` subclass thrown by `PartnerNotifier` when downstream is simulated as `down`; counted as a failure by CircuitBreaker's `recordExceptions` config |
+| `PartnerStatusRequest` | `com.electronik54.consumer.dto` | Record DTO with `boolean down` field, used by `POST /api/downstream/setStatus` to programmatically switch the simulated downstream on/off for drilling and demo purposes |
 | `MessageController` | `...producer.controller` | REST API | `POST /api/messages/publish` → `publish(OrderEvent)` → `ResponseEntity<PublishResponse>` |
 | `MessagePublisher` | `...producer.service` | `KafkaTemplate<String, OrderEvent>` wrapper | `publish(topic, key, OrderEvent)` → `PublishResponse`; throws `PublishException` |
 | `OrderEvent` / `PublishResponse` | `...producer.dto` | wire shapes | `orderId`,`customerId`,`amount` / `topic`,`partition`,`offset` |
@@ -1006,6 +1024,33 @@ them when the learner observes them for real.
     loop. *(Observed live in Step 13: the poison record could not be parked
     until `producer.value-serializer: JsonSerializer` was added to the
     consumer's `application.yaml`.)*
+
+31. **CircuitBreaker metrics are invisible without `resilience4j-micrometer`.**
+    `resilience4j-spring-boot4` alone does not register breaker metrics — Micrometer
+    is not a transitive dependency. Add `io.github.resilience4j:resilience4j-micrometer`
+    (version must match the starter, 2.4.0) to get `resilience4j_circuitbreaker_state`,
+    `_failure_rate`, `_calls`, `_not_permitted_calls_total`. *(Observed live in Step 16.)*
+
+32. **Kafka client metrics auto-bind in Spring Boot 4.1.1 — look before you add code.**
+    With `spring-boot-starter-actuator` + `micrometer-registry-prometheus` + `spring-boot-starter-kafka`,
+    the listener consumer's metrics appear at `/actuator/prometheus` (e.g.
+    `kafka_consumer_fetch_manager_records_lag_max`). No extra bean needed. *(Observed live in Step 16.)*
+
+33. **Alert on the RATE of consumer lag, not its value.** `kafka_consumer_fetch_manager_records_lag_max`
+    uses the *current* offset (its HELP says so), not the committed offset — fine for "is the
+    consumer keeping up," not for audit. Saw-tooth is healthy; a monotonic climb is the incident.
+    A custom in-app poll-every-5s dashboard is NOT monitoring; use these metrics + `kafbat-ui`. *(Step 16.)*
+
+34. **A SASL listener on the apache/kafka image needs a JAAS file + `KAFKA_OPTS` — not inline env.**
+    Setting `sasl.jaas.config` via `KAFKA_LISTENER_NAME_..._SASL_JAAS_CONFIG` is *ignored* (server-side it must be mechanism-prefixed: `listener.name.<l>.scram-sha-256.sasl.jaas.config`, which the env→property underscore→dot mapping can't express because of the hyphens). Fix: mount `kafka_server_jaas.conf` (`KafkaServer { org.apache.kafka.common.security.scram.ScramLoginModule required; };`) and set `KAFKA_OPTS=-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_server_jaas.conf`; otherwise the broker exits with `Could not find a 'KafkaServer' or 'sasl.KafkaServer' entry in the JAAS configuration`. *(Step 17.)*
+
+35. **`bootstrap-servers` must point at the door that matches the client's `security.protocol`.** SASL client → PLAINTEXT listener = `Unexpected handshake request with client mechanism SCRAM-SHA-256, enabled mechanisms are []`. Right door but wrong creds = `Authentication failed ... invalid credentials`. A wrong username sent because a `${…}` env placeholder didn't resolve also shows as "invalid credentials" (not a startup error). *(Step 17.)*
+
+36. **Enabling the authorizer needs a broker restart, and with NO persistent volume that wipes SCRAM users + ACLs + topics.** `authorizer.class.name` is not dynamic. `SecurityDisabledException: No Authorizer is configured` = the authorizer env didn't take effect (compose edit missing/unsaved). After the recreate, re-bootstrap users, topics and ACLs. Keep `super.users=User:ANONYMOUS` (the :9092 plaintext door) as the admin door while migrating. *(Step 17.)*
+
+37. **Kafka ACLs are fine-grained and easy to under-grant.** Producer: `Write`+`Create`+`Describe` on its topic, `IdempotentWrite` on the cluster (idempotent producer), `Describe` on the cluster. Consumer: `Read` on the topic, `Read` on *every* group id it uses (`-retry`, `-dlt` too), and `Write`+`Create`+`Describe` on the retry/dlt topics (it republishes) + `IdempotentWrite`. Missing one surfaces as `TopicAuthorizationException` / `GroupAuthorizationException`. *(Step 17.)*
+
+38. **Exceptions thrown in a `@KafkaListener` never reach `@RestControllerAdvice`.** They run on the consumer thread; Spring Kafka's error handling (`@RetryableTopic`, `DeadLetterPublishingRecoverer`) logs the full `Caused by:` chain. Control message-vs-stack there via log levels / a custom `CommonErrorHandler` — `GlobalExceptionHandler` only sees HTTP requests. *(Step 17.)*
 
 ---
 

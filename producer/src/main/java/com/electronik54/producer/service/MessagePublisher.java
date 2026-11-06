@@ -20,7 +20,15 @@ public class MessagePublisher {
     public PublishResponse publish(String topic, String key, OrderEvent event) {
         try {
             RecordMetadata meta = kafkaTemplate.send(topic, key, event).join().getRecordMetadata();
-            log.debug("Published to {} partition={} offset={}", meta.topic(), meta.partition(), meta.offset());
+            log.info("Published to {} partition={} offset={} \n Order-> orderDate:{} | orderId:{} |  customerId:{} | amount:{}"
+                    , meta.topic()
+                    , meta.partition()
+                    , meta.offset()
+                    , event.orderDate()
+                    , event.orderId()
+                    , event.customerId()
+                    , event.amount()
+            );
             return new PublishResponse(meta.topic(), meta.partition(), meta.offset());
         } catch (Exception ex) {
             throw new PublishException("Failed to publish to topic " + topic, ex);

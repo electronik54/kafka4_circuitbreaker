@@ -1,10 +1,26 @@
 server:
   port: 8025
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
 spring:
+  profiles:
+    active: local
+  output:
+    ansi:
+      enabled: always #for colored logs in terminal
   application:
     name: consumer
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9094
+    properties:
+      security.protocol: SASL_PLAINTEXT
+      sasl.mechanism: SCRAM-SHA-256
+      sasl.jaas.config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${APP_SASL_USERNAME}" password="${APP_SASL_PASSWORD}";' #the username and password is for the app to authenticate itself to access kafka
     listener:
       ack-mode: RECORD # ack after each record succeeds. Default:BATCH
     producer:
@@ -16,14 +32,36 @@ spring:
       group-id: learning-consumer
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+
+      # IMP-NOTES: ErrorHandlingDeserializer WRAPS the real deserializer (the "delegate").
+      # Without it, a malformed record throws inside poll() - before our listener runs - and the
+      # raw bytes are lost. With it, the failure is caught and sent to the DLT, so the consumer
+      # keeps running. The delegate class is set via spring.deserializer.value.delegate.class.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: com.electronik54.consumer.dto
         spring.json.value.default.type: com.electronik54.consumer.dto.OrderEvent
         spring.json.use.type.headers: false
+
 logging:
   level:
     org.springframework.kafka.listener.DeadLetterPublishingRecoverer: DEBUG
     org.springframework.kafka.retrytopic: DEBUG
     org.apache.kafka: WARN
     org.springframework.kafka.listener.KafkaMessageListenerContainer: WARN
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      downstream:
+        slidingWindowType: COUNT_BASED #measure the last N calls, not the last N seconds
+        slidingWindowSize: 10 #look at the last 10 calls
+        minimumNumberOfCalls: 5 #don't judge until at least 5 calls have happened
+        failureRateThreshold: 50 #trip when 50% or more of those calls failed
+        waitDurationInOpenState: 10s #stay OPEN (blocked) for 10 seconds before testing again
+        permittedNumberOfCallsInHalfOpenState: 2 #when HALF_OPEN, allow 2 test calls to decide
+        automaticTransitionFromOpenToHalfOpenEnabled: true #move OPEN → HALF_OPEN by itself after that wait, instead of waiting for the next call
+        recordExceptions: #only this exception counts as a failure
+          - com.electronik54.consumer.downstream.DownstreamUnavailableException
+        eventConsumerBufferSize: 10 #how many state-change events to keep buffered (we log these in 15.5)
